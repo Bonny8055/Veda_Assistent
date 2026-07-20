@@ -112,7 +112,7 @@ class VedaAssistant {
     processCommand(command, inputType) {
         this.showThinking();
         
-        fetch('/process-command', {
+        fetch('/api/v1/command', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -124,8 +124,12 @@ class VedaAssistant {
         })
         .then(response => response.json())
         .then(data => {
+            if (data.error) {
+                this.showError(data.error);
+                this.displayResponse({ text: 'Sorry, there was a problem.' }, 'error', 'system');
+                return;
+            }
             this.displayResponse(data, command, inputType);
-            this.loadCommandHistory();
         })
         .catch(error => {
             console.error('Error:', error);
@@ -180,58 +184,16 @@ class VedaAssistant {
             </div>
         `;
 
-        this.speakText(data.text);
-    }
-
-    speakText(text) {
-        if ('speechSynthesis' in window) {
-            const cleanText = text.replace(/[🤖🎵🕐📅📚😂🔍💬🧮⛅❓🎲❌🤔👋😊🌟🚀🌈💫💪🤗😄]/g, '')
-                                .replace(/\*\*(.*?)\*\*/g, '$1');
-            
-            const utterance = new SpeechSynthesisUtterance(cleanText);
-            utterance.rate = 0.9;
-            utterance.pitch = 1.2;  // Higher pitch for female voice
-            utterance.volume = 0.8;
-            
-            // Get available voices and select a female voice
-            const voices = speechSynthesis.getVoices();
-            const femaleVoice = voices.find(voice => 
-                voice.name.includes('Female') || 
-                voice.name.includes('female') ||
-                voice.name.includes('Google UK English Female') ||
-                voice.name.includes('Microsoft Zira') ||
-                voice.name.includes('Samantha') ||
-                voice.lang.includes('en-US') && voice.name.toLowerCase().includes('female')
-            );
-            
-            if (femaleVoice) {
-                utterance.voice = femaleVoice;
-            } else {
-                // Fallback: use any available English voice
-                const englishVoice = voices.find(voice => voice.lang.includes('en'));
-                if (englishVoice) {
-                    utterance.voice = englishVoice;
-                }
-            }
-            
-            speechSynthesis.speak(utterance);
+        // Play the audio response from the backend
+        if (data.audio_url) {
+            const audio = new Audio(data.audio_url);
+            audio.play();
         }
     }
 //////////////////////////////////////////////////////////////////////////////////////
     setSuggestion(text) {
         document.getElementById('textInput').value = text;
         document.getElementById('textInput').focus();
-    }
-
-    loadCommandHistory() {
-        fetch('/command-history')
-            .then(response => response.json())
-            .then(data => {
-                this.displayHistory(data.history || []);
-            })
-            .catch(error => {
-                console.error('Error loading history:', error);
-            });
     }
 
     displayHistory(history) {
@@ -262,27 +224,6 @@ class VedaAssistant {
                 </div>
             </div>
         `).join('');
-    }
-
-    clearHistory() {
-        if (confirm('Are you sure you want to clear all command history?')) {
-            fetch('/clear-history', {
-                method: 'POST'
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    this.loadCommandHistory();
-                    this.showMessage('History cleared successfully!');
-                } else {
-                    this.showError('Failed to clear history.');
-                }
-            })
-            .catch(error => {
-                console.error('Error clearing history:', error);
-                this.showError('Failed to clear history.');
-            });
-        }
     }
 
     showError(message) {
