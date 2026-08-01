@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant UI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            color: #f8fafc;
+            margin: 0;
+            padding: 40px;
+        }
+        .card {
+            max-width: 760px;
+            margin: 0 auto;
+            background: #111827;
+            padding: 24px;
+            border-radius: 18px;
+            box-shadow: 0 12px 35px rgba(0,0,0,0.3);
+        }
+        h1 { margin-top: 0; }
+        p { color: #cbd5e1; }
+        form { display: flex; gap: 10px; margin-top: 20px; }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid #334155;
+            font-size: 16px;
+            background: #0f172a;
+            color: white;
+        }
+        button {
+            padding: 12px 16px;
+            border: none;
+            border-radius: 10px;
+            background: #38bdf8;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button.secondary {
+            background: #ef4444;
+        }
+        .status {
+            margin-top: 14px;
+            color: #7dd3fc;
+            min-height: 24px;
+        }
+        .response {
+            margin-top: 16px;
+            padding: 14px;
+            background: #1f2937;
+            border-radius: 10px;
+            min-height: 60px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Voice Assistant Dashboard</h1>
+        <p>Speak naturally into the microphone for a hands-free experience. Typing still works as a backup.</p>
+
+        <form id="assistant-form" method="post">
+            {% csrf_token %}
+            <input type="text" id="command-input" name="command" placeholder="Type a command or use the mic" value="{{ command|default:'' }}" required>
+            <button type="submit">Run</button>
+            <button type="button" id="mic-button" class="secondary">🎤 Mic</button>
+        </form>
+
+        <div id="status" class="status">Ready to listen.</div>
+
+        <div id="response" class="response">
+            {% if response %}
+                <strong>Assistant:</strong> {{ response }}
+            {% else %}
+                Waiting for your command...
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('assistant-form');
+        const input = document.getElementById('command-input');
+        const responseBox = document.getElementById('response');
+        const statusBox = document.getElementById('status');
+        const micButton = document.getElementById('mic-button');
+        const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let listening = false;
+        let recognizer = null;
+
+        if (SpeechRecognition) {
+            recognizer = new SpeechRecognition();
+            recognizer.lang = 'en-IN';
+            recognizer.continuous = false;
+            recognizer.interimResults = false;
+            recognizer.maxAlternatives = 1;
+
+            recognizer.onresult = function(event) {
+                const transcript = Array.from(event.results)
+                    .map(result => result[0].transcript)
+                    .join(' ')
+                    .trim();
+
+                if (transcript) {
+                    input.value = transcript;
+                    statusBox.textContent = 'Heard: ' + transcript;
+                    submitCommand(transcript, true);
+                }
+            };
+
+            recognizer.onerror = function(event) {
+                listening = false;
+                micButton.textContent = '🎤 Mic';
+                if (event.error === 'network') {
+                    statusBox.innerHTML = 'Network error from the browser speech service. Please use Chrome or Edge, allow microphone permission, and try again. You can still type your command below.';
+                } else {
+                    statusBox.textContent = 'Voice recognition error: ' + event.error;
+                }
+            };
+
+            recognizer.onend = function() {
+                listening = false;
+                micButton.textContent = '🎤 Mic';
+                if (statusBox.textContent.includes('Listening')) {
+                    statusBox.textContent = 'Listening stopped.';
+                }
+            };
+        } else {
+            micButton.disabled = true;
+            micButton.textContent = '🎤 Mic unavailable';
+        }
+
+        function setStatus(message) {
+            statusBox.textContent = message;
+        }
+
+        function speakText(text) {
+            if (!text || !('speechSynthesis' in window)) {
+                return;
+            }
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function submitCommand(command, fromVoice) {
+            if (!command || !command.trim()) {
+                return;
+            }
+
+            const payload = new FormData();
+            payload.append('command', command.trim());
+
+            setStatus(fromVoice ? 'Listening and processing your voice command...' : 'Processing your command...');
+            responseBox.innerHTML = '<em>Working...</em>';
+
+            fetch('/', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': csrfToken
+                },
+                body: payload
+            })
+                .then(response => response.json())
+                .then(data => {
+                    responseBox.innerHTML = '<strong>Assistant:</strong> ' + data.response;
+                    setStatus(fromVoice ? 'Voice command completed.' : 'Command completed.');
+                    if (fromVoice) {
+                        speakText(data.response);
+                    }
+                })
+                .catch(() => {
+                    responseBox.innerHTML = '<strong>Assistant:</strong> I could not process that command.';
+                    setStatus('Could not process the command.');
+                });
+        }
+
+        form.addEventListener('submit', function(event) {
+            event.preventDefault();
+            submitCommand(input.value, false);
+        });
+
+        function requestMicAccess() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                return Promise.reject(new Error('Microphone access is not supported in this browser.'));
+            }
+
+            return navigator.mediaDevices.getUserMedia({ audio: true });
+        }
+
+        micButton.addEventListener('click', function() {
+            if (!recognizer) {
+                setStatus('Voice recognition is not supported in this browser.');
+                return;
+            }
+
+            if (listening) {
+                recognizer.stop();
+                return;
+            }
+
+            requestMicAccess()
+                .then(() => {
+                    listening = true;
+                    micButton.textContent = '⏹ Stop';
+                    setStatus('Listening... speak now');
+                    recognizer.start();
+                })
+                .catch(() => {
+                    listening = false;
+                    micButton.textContent = '🎤 Mic';
+                    setStatus('Microphone access was blocked. Please allow microphone permission and try again.');
+                });
+        });
+    </script>
+</body>
+</html>
