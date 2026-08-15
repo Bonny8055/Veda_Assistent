@@ -6,6 +6,7 @@ import wikipedia
 import pyjokes
 import requests
 import json
+import re
 
 listener = sr.Recognizer()
 
@@ -26,7 +27,7 @@ def talk(text):
 def take_command(listener, source):
     command = ""
     try:
-        print("Listening...")
+        print("\n----- Mic ON: Listening for a command... -----")
         audio = listener.listen(
             source,
             timeout=5,
@@ -39,7 +40,7 @@ def take_command(listener, source):
         command = command.lower()
         if "veda" in command:
             command = command.replace("veda", "").strip()
-        print("You:", command)
+        print(f"DEBUG: Recognized command: '{command}'")
     except sr.WaitTimeoutError:
         print("No voice detected")
     except sr.UnknownValueError:
@@ -51,22 +52,43 @@ def take_command(listener, source):
     return command
 
 
+def extract_unity_command(command):
+    text = (command or "").strip().lower()
+    if not text:
+        return None
+
+    cleaned = re.sub(r"[^a-z\s]", " ", text)
+    words = [word for word in cleaned.split() if word]
+
+    if any(word in {"go", "move", "forward"} for word in words):
+        return "go"
+    if any(word in {"stop", "halt", "freeze"} for word in words):
+        return "stop"
+    return None
+
+
 def run_veda(command):
 
     if command == "":
         return
     
-    # --- Unity Commands ---
-    unity_commands = ["go", "move", "stop"]
-    if any(cmd in command for cmd in unity_commands):
-        try:
-            # Send the command to the Django backend
-            requests.post("http://localhost:8000/command/", data=json.dumps({'command': command}))
-            talk(f"Sending command to Unity: {command}")
-        except requests.exceptions.RequestException as e:
-            talk("Could not connect to the game. Make sure it is running.")
-        return
+    # --- DEBUG: Print the exact command being processed ---
+    print(f"DEBUG: run_veda received command: '{command}'")
 
+    # --- Unity Commands ---
+    unity_command = extract_unity_command(command)
+    if unity_command:
+        try:
+            print(f"DEBUG: Sending Unity command '{unity_command}' to Django backend...")
+            # Send the command to the Django backend
+            response = requests.post("http://localhost:8000/command/", json={'command': unity_command})
+            response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
+            print(f"DEBUG: Successfully sent command. Backend response: {response.json()}")
+            talk(f"Sending command to Unity: {unity_command}")
+        except requests.exceptions.RequestException as e:
+            talk(f"Could not connect to the game backend. Error: {e}")
+        return
+    
     elif "play" in command:
         song = command.replace("play", "").strip()
 
@@ -105,14 +127,13 @@ def run_veda(command):
     elif "are you single" in command:
         talk("I am in a relationship with WiFi.")
 
-    elif "bagdad " in command:
+    elif "joke" in command:
         talk(pyjokes.get_joke())
 
-
-    elif "stop" in command or "exit" in command or "quit" in command:
+    elif "exit" in command or "quit" in command:
         talk("Goodbye")
         exit()
-    elif "hi" in command or "hello" in command or "Hola" in  command or "hai" in command or "Hey" in command or "Howdy" in command or "What's up" in command:
+    elif any(greeting in command for greeting in ["hi", "hello", "hola", "hai", "hey", "howdy", "what's up"]):
             talk("Hello! what's in your mind bro?" or "Hi! How can I assist you today?" or "Hola! What can I do for you?" or "Hello! How can I help you today?" or "Hi! What can I assist you with?" or "Hola! How can I be of service to you?")
     
     else:

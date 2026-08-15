@@ -1,5 +1,6 @@
 import datetime
 import random
+import re
 
 try:
     import pyjokes
@@ -20,6 +21,23 @@ try:
     import pyttsx3
 except ImportError:  # pragma: no cover
     pyttsx3 = None
+
+
+def extract_unity_command(command):
+    text = (command or "").strip().lower()
+    if not text:
+        return None
+
+    cleaned = re.sub(r"[^a-z\s]", " ", text)
+    words = [word for word in cleaned.split() if word]
+
+    if any(word in {"go", "move", "forward"} for word in words):
+        return "go"
+
+    if any(word in {"stop", "halt", "freeze"} for word in words):
+        return "stop"
+
+    return None
 
 
 class VoiceAssistant:
@@ -50,6 +68,12 @@ class VoiceAssistant:
         text = (command or "").strip().lower()
         if not text:
             return "Please enter a command first."
+
+        unity_command = extract_unity_command(text)
+        if unity_command == "go":
+            return "go"
+        if unity_command == "stop":
+            return "stop"
 
         if "play" in text:
             song = text.replace("play", "").strip()

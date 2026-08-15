@@ -12,7 +12,6 @@ public class backend_link : MonoBehaviour
 {
     public float moveSpeed = 5f;
     private bool isMoving = false;
-    private string lastProcessedCommand = null;
     private string backendUrl = "http://localhost:8000/command/";
 
     void Start()
@@ -31,15 +30,19 @@ public class backend_link : MonoBehaviour
 
                 if (webRequest.result == UnityWebRequest.Result.Success)
                 {
-                    CommandData commandData = JsonUtility.FromJson<CommandData>(webRequest.downloadHandler.text);
-                    string newCommand = commandData.command;
+                    // --- DEBUG: Log the raw response from the server to confirm connection ---
+                    Debug.Log("DEBUG: Successfully connected to Django. Raw response: " + webRequest.downloadHandler.text);
 
-                    // Process the command only if it's new
-                    if (newCommand != null && newCommand != lastProcessedCommand)
+                    CommandData commandData = JsonUtility.FromJson<CommandData>(webRequest.downloadHandler.text);
+                    // Sanitize the command as soon as it's received.
+                    string newCommand = commandData.command?.ToLower().Trim();
+                    
+                    // Process the command only if it's not null or empty
+                    if (!string.IsNullOrEmpty(newCommand))
                     {
                         Debug.Log("Received command: " + newCommand);
                         ProcessCommand(newCommand);
-                        lastProcessedCommand = newCommand;
+                        StartCoroutine(ClearCommandOnServer());
                     }
                 }
             }
@@ -47,13 +50,24 @@ public class backend_link : MonoBehaviour
             yield return new WaitForSeconds(1f);
         }
     }
+    
+    IEnumerator ClearCommandOnServer()
+    {
+        // Use a form to send the data, which is a common way for POST requests.
+        WWWForm form = new WWWForm();
+        form.AddField("command", ""); // Send an empty command to clear it
+
+        using (UnityWebRequest webRequest = UnityWebRequest.Post(backendUrl, form))
+        {
+            // We need to set the content type for JSON, but since we are clearing, we can just post an empty command.
+            // A more RESTful way would be a DELETE request, but POST works fine here.
+            yield return webRequest.SendWebRequest();
+            // We don't need to check the result, just fire and forget.
+        }
+    }
 
     void ProcessCommand(string command)
     {
-        Debug.Log("ProcessCommand: " + command);
-
-        command = command.ToLower().Trim();
-
         if (command == "go" || command == "move")
         {
             isMoving = true;
@@ -70,7 +84,10 @@ public class backend_link : MonoBehaviour
     {
         if (isMoving)
         {
-            Debug.Log("Moving object");
+            // --- DEBUG: Confirm that the script is trying to move the object ---
+            Debug.Log("Update: isMoving is true. Attempting to move cube.");
+
+            // This will now execute when isMoving is true
             transform.Translate(Vector3.forward * moveSpeed * Time.deltaTime);
         }
     }

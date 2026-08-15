@@ -30,14 +30,18 @@ def home_view(request):
 def command_view(request):
     if request.method == 'POST':
         try:
+            # Handle JSON from main.py
             data = json.loads(request.body)
             last_command['command'] = data.get('command')
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return JsonResponse({'error': 'Request body must be valid JSON.'}, status=400)
-
-        last_command['command'] = data.get('command')
-        return JsonResponse({'status': 'ok', 'command': last_command['command']})
+            return JsonResponse({'status': 'ok', 'command': last_command['command']})
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+            # Handle form data from Unity to clear the command
+            command = request.POST.get('command', None)
+            last_command['command'] = command
+            return JsonResponse({'status': 'ok', 'command': last_command['command']})
     if request.method == 'GET':
-        return JsonResponse({"command": "go"})
+        # --- DEBUG: Log when Unity connects to get a command ---
+        print(f"DEBUG: Unity client connected. Sending command: {last_command}")
+        return JsonResponse(last_command)
 
     return HttpResponseNotAllowed(['GET', 'POST'])
